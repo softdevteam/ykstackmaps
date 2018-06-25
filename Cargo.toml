@@ -1,0 +1,8 @@
+[package]
+name = "ykstackmaps"
+version = "0.1.0"
+authors = ["Edd Barrett <vext01@gmail.com>"]
+
+[dependencies]
+elf = "0.0"
+byteorder = "1.2"
