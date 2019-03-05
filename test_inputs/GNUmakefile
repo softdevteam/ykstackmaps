@@ -13,7 +13,7 @@ ${TARGET_DIR}/%.s: %.ll
 	llc-6.0 -relocation-model=pic -o $@ $<
 
 ${TARGET_DIR}/%: ${TARGET_DIR}/%.s
-	clang-6.0 ${CFLAGS} -o $@ $< ${LDFLAGS}
+	clang-6.0 -c ${CFLAGS} -o $@ $< ${LDFLAGS}
 
 clean:
 	for i in ${BINS}; do rm -f $$i $$i.s; done
