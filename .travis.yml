@@ -27,7 +27,7 @@ addons:
       - libfuzzer-8-dev
 
 before_script:
-    - wget https://github.com/jacob-hughes/llvm-readobj-bin/blob/master/archive/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz -o /tmp/llvm-8-readobj.tar.gz
+    - wget https://github.com/jacob-hughes/llvm-readobj-bin/blob/master/archive/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz?raw=true -o /tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz
     - tar -xzvf /tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz
     - export LLVM_READOBJ_PATH="/tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux"
     - export PATH="$PATH:$HOME/.cargo/bin"
