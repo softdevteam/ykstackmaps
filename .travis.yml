@@ -28,8 +28,7 @@ addons:
 
 before_script:
     - wget "https://github.com/jacob-hughes/llvm-readobj-bin/blob/master/archive/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz?raw=true" -O /tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz
-    - tar -xzvf /tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz
-    - export LLVM_READOBJ_PATH="/tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux"
+    - tar -xzvf /tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz -C /tmp/
     - export PATH="$PATH:$HOME/.cargo/bin"
 
 script:
