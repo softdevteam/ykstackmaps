@@ -10,10 +10,10 @@ all: ${BINS}
 
 ${TARGET_DIR}/%.s: %.ll
 	mkdir -p `dirname $@`
-	llc-6.0 -relocation-model=pic -o $@ $<
+	llc-8 -relocation-model=pic -o $@ $<
 
 ${TARGET_DIR}/%: ${TARGET_DIR}/%.s
-	clang-6.0 ${CFLAGS} -o $@ $< ${LDFLAGS}
+	clang-8 ${CFLAGS} -o $@ $< ${LDFLAGS}
 
 clean:
 	for i in ${BINS}; do rm -f $$i $$i.s; done
