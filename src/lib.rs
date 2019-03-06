@@ -396,6 +396,8 @@ mod tests {
                           .arg(path.to_str().unwrap())
                           .output()
                           .expect("failed to run llvm-readelf command");
+        dbg!{&out.stdout};
+        dbg!{&out.stderr};
         assert!(out.status.success());
         let stdout = String::from_utf8(out.stdout).unwrap();
 
