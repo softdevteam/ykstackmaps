@@ -26,6 +26,9 @@ addons:
       - libfuzzer-8.0-dev
 
 before_script:
+    - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add - 
+    - echo "deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-8 main" | sudo tee -a /etc/apt/sources.list
+    - sudo apt-get update
     - wget https://github.com/jacob-hughes/llvm-readobj-bin/blob/master/archive/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz -o /tmp/llvm-8-readobj.tar.gz
     - tar -xzvf /tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz
     - export LLVM_READOBJ_PATH="/tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux"
