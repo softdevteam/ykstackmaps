@@ -27,9 +27,9 @@ addons:
       - libfuzzer-8-dev
 
 before_script:
-    - wget "https://github.com/jacob-hughes/llvm-readobj-bin/blob/master/archive/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz?raw=true" -O /tmp/llvm-readobj.tar.gz
-    - tar -xzvf /tmp/llvm-readobj.tar.gz
-    - export PATH="$PATH:$HOME/.cargo/bin:$PWD/llvm-readbj"
+    - wget "https://github.com/jacob-hughes/llvm-readobj-bin/blob/master/archive/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux.tar.gz?raw=true" -O /tmp/llvm-readobj-v3.tar.gz
+    - tar -xzvf /tmp/llvm-readobj-v3.tar.gz
+    - export PATH="$PATH:$HOME/.cargo/bin:$PWD/llvm-readbj-v3"
 
 script:
     - cargo build --examples
@@ -37,4 +37,4 @@ script:
     - cargo test
 
 env:
-    - LLVM_READOBJ_PATH=llvm-readobj
+    - LLVM_READOBJ_PATH=llvm-readobj-v3
