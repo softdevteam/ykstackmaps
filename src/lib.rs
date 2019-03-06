@@ -341,10 +341,9 @@ mod tests {
     use std::process::Command;
     use super::{SMFunc, SMRec, StackMapParser};
 
-    const LLVM_READELF: &str = "llvm-readelf-6.0";
-
     #[cfg(target_os="linux")]
     const MAKE: &str = "make";
+    const LLVM_READOBJ_PATH: &str = "LLVM_READOBJ_PATH";
 
     // Invokes GNU make to build a test input.
     fn build_test_inputs(path: &PathBuf) {
@@ -388,7 +387,11 @@ mod tests {
 
     // Parse the output of llvm-readelf to get expected outcomes.
     fn get_expected(path: &Path) -> (Vec<SMFunc>, Vec<SMRec>) {
-        let out = Command::new(LLVM_READELF)
+        let readelf = match env::var(LLVM_READOBJ_PATH) {
+            Ok(val) => val,
+            Err(e) => panic!("No {} environment variable provided", LLVM_READOBJ_PATH),
+        };
+        let out = Command::new(readelf)
                           .arg("-stackmap")
                           .arg(path.to_str().unwrap())
                           .output()
