@@ -36,3 +36,6 @@ script:
     - cargo build --examples
     - cargo doc --no-deps
     - cargo test
+
+env:
+    - LLVM_READOBJ_PATH=/tmp/llvm-8-readobj-v3-stackmap-x86-64-gnu-linux
