@@ -71,6 +71,59 @@ const OFFS_STACK_SIZE_ENTRIES: u64 = 16;
 pub struct SMRec {
     id: u64,            // Stackmap ID.
     offset: u32,        // Stackmap offset from start of containing func.
+    num_locs: u16,
+    locs: Vec<SMLoc>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct SMLoc {
+    kind: LocKind,
+    size: u16,
+    dwarf_reg: u16,
+    offset: LocOffset,
+}
+
+/// Unfortunately, due to a discrepancy between the llvm stackmap documentation
+/// [0] and the implementation of their own stackmap parser [1], we need this
+/// enum to interpret the integer type differently depending on it's `LocKind`.
+/// The offset is interpreted as a u32 *iff* the `LocKind` is a Constant. In all
+/// other cases, this is an i32. There are examples [2] in the LLVM test suite
+/// where the offset value contains an integer which won't fit inside an i32.
+/// For now, we interpret this in the same way that llvm-readobj, and it's test
+/// suite expects.
+///
+/// [0] https://llvm.org/docs/StackMaps.html#id10
+/// [1] https://github.com/llvm/llvm-project/blob/57b38a8593bd7d63b9db09676087365d8d3d0d8a/llvm/include/llvm/Object/StackMapParser.h#L123
+/// [2] https://github.com/llvm/llvm-project/blob/master/llvm/test/CodeGen/X86/stackmap-large-location-size.ll
+///
+// #XXX: Update this when we get clarification on what the correct behaviour is
+// from the LLVM devs.
+#[derive(Debug, Eq, PartialEq)]
+pub enum LocOffset {
+    I32(i32),
+    U32(u32)
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum LocKind {
+    Register,
+    Direct,
+    Indirect,
+    Constant,
+    ConstIndex
+}
+
+impl LocKind {
+    fn from_hex(val: u8) -> SMParserResult<LocKind>{
+        match val {
+            0x1 => Ok(LocKind::Register),
+            0x2 => Ok(LocKind::Direct),
+            0x3 => Ok(LocKind::Indirect),
+            0x4 => Ok(LocKind::Constant),
+            0x5 => Ok(LocKind::ConstIndex),
+            _ => Err(SMParserError::Other("Unknown location kind".to_string()))
+        }
+    }
 }
 
 impl SMRec {
@@ -128,9 +181,9 @@ impl<'a> Iterator for SMRecIterator<'a> {
 
         // StkMapRecord[NumRecords] {
         //     uint64: PatchPoint ID
-        let sm_id = itry!(cursor.read_u64::<NativeEndian>());
+        let id = itry!(cursor.read_u64::<NativeEndian>());
         //     uint32: Instruction Offset
-        let sm_offset = itry!(cursor.read_u32::<NativeEndian>());
+        let offset = itry!(cursor.read_u32::<NativeEndian>());
 
         // At this point we have everything we need from this entry, but need to skip the remainder
         // of the (variable-sized) entry to find the start of the next.
@@ -141,11 +194,25 @@ impl<'a> Iterator for SMRecIterator<'a> {
         //     uint16: NumLocations
         let num_locs = itry!(cursor.read_u16::<NativeEndian>());
         //     Location[NumLocations] { ... }
+        let loc_iter = SMLocIterator {
+            elf_file: self.elf_file,
+            cursor: None,
+            start_pos: cursor.position(),
+            num_locs: num_locs
+        };
+
+        let mut locs = Vec::with_capacity(num_locs as usize);
+        for loc in loc_iter {
+            locs.push(loc.expect("malformed location"))
+        }
+
         let skip_locs_sz = u64::from(u32::from(num_locs) * u32::from(SIZE_LOC_ENTRY));
         itry!(cursor_skip(&mut cursor, skip_locs_sz as i64));
+
         //     uint32: Padding (only if required to align to 8 byte)
         //     uint16: Padding
         itry!(cursor_align8(&mut cursor));
+        itry!(cursor_skip(&mut cursor, 2));
 
         //     uint16: NumLiveOuts
         let num_liveouts = itry!(cursor.read_u16::<NativeEndian>());
@@ -158,7 +225,57 @@ impl<'a> Iterator for SMRecIterator<'a> {
         // } -- End of this stackmap record.
 
         self.num_stackmaps -= 1;
-        Some(Ok(SMRec{id: sm_id, offset: sm_offset}))
+        Some(Ok(SMRec { id, offset, num_locs, locs }))
+    }
+}
+
+struct SMLocIterator<'a> {
+    elf_file: &'a elf::File,
+    cursor: Option<Cursor<&'a Vec<u8>>>,
+    start_pos: u64,
+    num_locs: u16
+}
+
+impl<'a> Iterator for SMLocIterator<'a> {
+    type Item = SMParserResult<SMLoc>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.num_locs == 0 {
+            return None;
+        }
+
+        if self.cursor.is_none() {
+            self.cursor = Some(itry!(cursor_from_elf(self.elf_file, self.start_pos)));
+        }
+
+        let cursor = self.cursor.as_mut().unwrap();
+        // Location[NumRecords] {
+        //     uint8: Register | Direct | Indirect | Constant | ConstIndex
+        let kind = itry!(cursor.read_u8());
+        let kind = itry!(LocKind::from_hex(kind));
+        //     uint8: Reserved (expected to be 0)
+        let reserved = itry!(cursor.read_u8());
+        assert_eq!(reserved, 0);
+        //     uint16: Location Size
+        let size = itry!(cursor.read_u16::<NativeEndian>());
+        //     uint16: Dwarf RegNum
+        let dwarf_reg = itry!(cursor.read_u16::<NativeEndian>());
+        //     uint16: Reserved (expected to be 0)
+        let reserved = itry!(cursor.read_u16::<NativeEndian>());
+        assert_eq!(reserved, 0);
+        //     iint32 | uint32 : Offset
+        let offset = match kind {
+            LocKind::Constant => {
+                let v = itry!(cursor.read_u32::<NativeEndian>());
+                LocOffset::U32(v)
+            },
+            _ => {
+                let v = itry!(cursor.read_i32::<NativeEndian>());
+                LocOffset::I32(v)
+            }
+        };
+        self.num_locs -= 1;
+        Some(Ok(SMLoc { kind, size, dwarf_reg, offset }))
     }
 }
 
@@ -339,7 +456,7 @@ mod tests {
     use std::iter::Iterator;
     use std::path::{Path, PathBuf};
     use std::process::Command;
-    use super::{SMFunc, SMRec, StackMapParser};
+    use super::{SMFunc, SMRec, SMLoc, StackMapParser, LocKind, LocOffset};
 
     #[cfg(target_os="linux")]
     const MAKE: &str = "make";
@@ -390,6 +507,62 @@ mod tests {
         SMFunc { addr, stack_size }
     }
 
+    fn parse_loc(line: &str) -> SMLoc {
+        let elems: Vec<&str> = line.split(|c| c == ',' || c == ':').collect();
+        // Gives ["#N " LocKind +Data", "0", "size", " 8"]
+
+        let size = elems[3].trim().parse::<u16>().unwrap();
+        let mut loc = elems[1].trim().split_whitespace();
+        let kind = loc.next().unwrap();
+        let rest: Vec<&str> = loc.collect();
+
+        match kind {
+            "Register" => {
+                // e.g rest: ["R#0"]
+                let kind = LocKind::Register;
+                let dwarf_reg = rest[0].trim_start_matches("R#").parse::<u16>().unwrap();
+                let offset = LocOffset::I32(0);
+                SMLoc { kind, size, dwarf_reg, offset }
+            },
+            "Direct" => {
+                // e.g rest: ["R#0", "+", "-40"]
+                let kind = LocKind::Direct;
+                let dwarf_reg = rest[0].trim_start_matches("R#").parse::<u16>().unwrap();
+                let offset = LocOffset::I32(rest[2].parse::<i32>().unwrap());
+                SMLoc { kind, size, dwarf_reg, offset }
+            },
+            "Indirect" => {
+                // e.g rest: ["[R#0", "+", "-40]"]
+                let kind = LocKind::Indirect;
+                let dwarf_reg = rest[0].trim_start_matches("[R#").parse::<u16>().unwrap();
+                let offset = {
+                    let n = rest[2].trim_end_matches("]").parse::<i32>().unwrap();
+                    LocOffset::I32(n)
+                };
+                SMLoc { kind, size, dwarf_reg, offset }
+            },
+            "Constant" => {
+                let kind = LocKind::Constant;
+                let dwarf_reg = 0;
+                let offset = {
+                    let c = rest[0].parse::<u32>().unwrap();
+                    LocOffset::U32(c)
+                };
+                SMLoc { kind, size, dwarf_reg, offset }
+            },
+            "ConstantIndex" => {
+                let kind = LocKind::ConstIndex;
+                let dwarf_reg = 0;
+                let offset = {
+                    let c = rest[0].trim_start_matches("#").parse::<i32>().unwrap();
+                    LocOffset::I32(c)
+                };
+                SMLoc { kind, size, dwarf_reg, offset }
+            },
+            _ => panic!("Unidentified Location Kind"),
+        }
+    }
+
     // Creates an `SMRec` struct from the iterator over lines of strings given.
     // This will increment the iterator past the lines needed parsing.
     fn parse_record<'a, I>(lines: &mut I) -> SMRec
@@ -404,7 +577,8 @@ mod tests {
         let id = elems[1].trim().parse::<u64>().unwrap();
         let offset = elems[3].trim().parse::<u32>().unwrap();
 
-        // Skip Locs
+        // Location nums line, e.g:
+        //  "4 locations:"
         let num_locs = {
             let line = lines.next().unwrap();
             let n = line.split_whitespace().next().unwrap();
@@ -413,15 +587,16 @@ mod tests {
 
         // Individual location line, e.g:
         //  "#1: Register #R0, size: 8"
-        //  Skip for now
+        let mut locs = Vec::with_capacity(num_locs as usize);
         for _ in 0..num_locs {
-            lines.next();
+            let line = lines.next().unwrap();
+            locs.push(parse_loc(line));
         }
 
         // #TODO Live outs line
         lines.next();
 
-        SMRec { id, offset }
+        SMRec { id, offset, num_locs, locs }
     }
 
     // Parse the output of llvm-readelf to get expected outcomes.
@@ -479,6 +654,11 @@ mod tests {
         for (got, expect) in p.iter_stackmaps().zip(expect_stkmaps) {
             assert_eq!(got.unwrap(), expect);
         }
+    }
+
+    #[test]
+    fn test_large_stackmap() {
+        check_expected_stackmaps(test_bin_path("large_v3_stackmap", "stackmap"));
     }
 
     #[test]
