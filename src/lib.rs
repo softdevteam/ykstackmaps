@@ -657,6 +657,11 @@ mod tests {
     }
 
     #[test]
+    fn test_large_stackmap() {
+        check_expected_stackmaps(test_bin_path("large_v3_stackmap", "stackmap"));
+    }
+
+    #[test]
     fn test_hello_world1() {
         check_expected_stackmaps(test_bin_path("hello_world", "hello_world1"));
     }
