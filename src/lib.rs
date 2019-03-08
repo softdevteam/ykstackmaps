@@ -378,11 +378,50 @@ mod tests {
         pb
     }
 
-    // Returns the left and right hand side of a comma-separated key-value pair.
-    fn parse_key_val(s: &str) -> (&str, &str) {
-        let key_val: Vec<&str> = s.split(":").collect();
-        assert_eq!(key_val.len(), 2);
-        (key_val[0].trim(), key_val[1].trim())
+    // Construct an SMFunc struct from the parsing the output of a Function line
+    // in llvm-readobj. Example format:
+    //    Function address: 0, stack size: 8, callsite record count: 1
+    fn parse_fn(line: &str) -> SMFunc {
+        let elems: Vec<&str> = line.split(|c| c == ',' || c == ':').collect();
+        // Gives ["Function address", "0", "stack size", "8",  .... ]
+
+        let addr = elems[1].trim().parse::<u64>().unwrap();
+        let stack_size = elems[3].trim().parse::<u64>().unwrap();
+        SMFunc { addr, stack_size }
+    }
+
+    // Creates an `SMRec` struct from the iterator over lines of strings given.
+    // This will increment the iterator past the lines needed parsing.
+    fn parse_record<'a, I>(lines: &mut I) -> SMRec
+    where
+        I: Iterator<Item = &'a str>,
+    {
+        let line = lines.next().unwrap();
+        // Record ID: n, instruction offset: m
+        let elems: Vec<&str> = line.split(|c| c == ',' || c == ':').collect();
+        // e.g ["Record ID:", " 1", " instruction offset", " 4"]
+
+        let id = elems[1].trim().parse::<u64>().unwrap();
+        let offset = elems[3].trim().parse::<u32>().unwrap();
+
+        // Skip Locs
+        let num_locs = {
+            let line = lines.next().unwrap();
+            let n = line.split_whitespace().next().unwrap();
+            n.parse::<u16>().unwrap()
+        };
+
+        // Individual location line, e.g:
+        //  "#1: Register #R0, size: 8"
+        //  Skip for now
+        for _ in 0..num_locs {
+            lines.next();
+        }
+
+        // #TODO Live outs line
+        lines.next();
+
+        SMRec { id, offset }
     }
 
     // Parse the output of llvm-readelf to get expected outcomes.
@@ -399,33 +438,28 @@ mod tests {
 
         let mut funcs = Vec::new();
         let mut stkmaps = Vec::new();
-        for line in stdout.lines() {
-            if line.starts_with("  Function address:") {
-                let elems = line.split(",");
-                let mut addr = None;
-                let mut stack_size = None;
-                for e in elems {
-                    let (key, val) = parse_key_val(e);
-                    match key {
-                        "Function address" => addr = Some(val.parse::<u64>().unwrap()),
-                        "stack size" => stack_size = Some(val.parse::<u64>().unwrap()),
-                        _ => (),
-                    }
+
+        let mut lines = stdout.lines();
+        while let Some(line) = lines.next() {
+            if line.starts_with("Num Functions:") {
+                let fns = {
+                    let n = line.split(':').last().unwrap().trim();
+                    n.parse::<u32>().unwrap()
+                };
+                for _ in 0..fns {
+                    let line = lines.next().unwrap();
+                    funcs.push(parse_fn(line))
                 }
-                funcs.push(SMFunc{addr: addr.unwrap(), stack_size: stack_size.unwrap()});
-            } else if line.starts_with("  Record ID:") {
-                let elems = line.split(",");
-                let mut id = None;
-                let mut offset = None;
-                for e in elems {
-                    let (key, val) = parse_key_val(e);
-                    match key {
-                        "Record ID" => id = Some(val.parse::<u64>().unwrap()),
-                        "instruction offset" => offset = Some(val.parse::<u32>().unwrap()),
-                        _ => (),
-                    }
+            }
+
+            if line.starts_with("Num Records:") {
+                let rcs = {
+                    let n = line.split(':').last().unwrap().trim();
+                    n.parse::<u32>().unwrap()
+                };
+                for _ in 0..rcs {
+                    stkmaps.push(parse_record(&mut lines))
                 }
-                stkmaps.push(SMRec{id: id.unwrap(), offset: offset.unwrap()});
             }
         }
         (funcs, stkmaps)
