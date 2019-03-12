@@ -143,6 +143,7 @@ impl SMRec {
 pub struct SMFunc {
     addr: u64,          // Function address.
     stack_size: u64,    // Function's stack size.
+    record_count: u64,  // Number of stackmap records for this function.
 }
 
 impl SMFunc {
@@ -154,6 +155,10 @@ impl SMFunc {
     /// Get the size of the stack of the function.
     pub fn stack_size(&self) -> u64 {
         self.stack_size
+    }
+
+    pub fn record_count(&self) -> u64 {
+        self.record_count
     }
 }
 
@@ -305,11 +310,11 @@ impl<'a> Iterator for SMFuncIterator<'a> {
         //     uint64: Stack Size
         let stack_size = itry!(cursor.read_u64::<NativeEndian>());
         //     uint64: Record Count
-        itry!(cursor_skip(cursor, 8));
+        let record_count = itry!(cursor.read_u64::<NativeEndian>());
         // } -- End of this function entry.
 
         self.num_funcs -= 1;
-        Some(Ok(SMFunc{addr, stack_size}))
+        Some(Ok(SMFunc{addr, stack_size, record_count}))
     }
 }
 
@@ -502,7 +507,9 @@ mod tests {
 
         let addr = elems[1].trim().parse::<u64>().unwrap();
         let stack_size = elems[3].trim().parse::<u64>().unwrap();
-        SMFunc { addr, stack_size }
+        let record_count = elems[5].trim().parse::<u64>().unwrap();
+
+        SMFunc { addr, stack_size, record_count }
     }
 
     fn parse_loc(line: &str) -> SMLoc {
