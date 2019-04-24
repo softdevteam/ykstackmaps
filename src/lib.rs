@@ -69,18 +69,18 @@ const OFFS_STACK_SIZE_ENTRIES: u64 = 16;
 /// Represents a single stackmap record entry.
 #[derive(Debug, Eq, PartialEq)]
 pub struct SMRec {
-    id: u64,            // Stackmap ID.
-    offset: u32,        // Stackmap offset from start of containing func.
-    num_locs: u16,
-    locs: Vec<SMLoc>,
+    pub id: u64,            // Stackmap ID.
+    pub offset: u32,        // Stackmap offset from start of containing func.
+    pub num_locs: u16,
+    pub locs: Vec<SMLoc>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SMLoc {
-    kind: LocKind,
-    size: u16,
-    dwarf_reg: u16,
-    offset: LocOffset,
+    pub kind: LocKind,
+    pub size: u16,
+    pub dwarf_reg: u16,
+    pub offset: LocOffset,
 }
 
 /// Unfortunately, due to a discrepancy between the llvm stackmap documentation
